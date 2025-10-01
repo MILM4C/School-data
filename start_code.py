@@ -18,7 +18,7 @@ db = Database(host="localhost", gebruiker="user", wachtwoord="password", databas
 db.connect()
 
 # pas deze query aan om het juiste personeelslid te selecteren
-select_query = "SELECT * FROM personeelslid WHERE id = 4"
+select_query = "SELECT * FROM personeelslid WHERE id = 3"
 personeelslid = db.execute_query(select_query)
 
 # altijd verbinding sluiten met de database als je klaar bent
@@ -34,8 +34,20 @@ print(personeelslid[0]['naam']) # voorbeeld van hoe je bij een eigenschap komt
 db.connect()
 
 # pas deze query aan en voeg queries toe om de juiste onderhoudstaken op te halen
-select_query = "SELECT * FROM onderhoudstaak"
-onderhoudstaken = db.execute_query(select_query)
+select_query = """
+SELECT * FROM onderhoudstaak 
+WHERE beroepstype = %s 
+AND afgerond = 0
+AND (
+    bevoegdheid = %s 
+    OR bevoegdheid = 'Stagiair' 
+    OR (bevoegdheid = 'Junior' AND %s IN ('Medior', 'Senior'))
+    OR (bevoegdheid = 'Medior' AND %s = 'Senior')
+)
+ORDER BY prioriteit DESC, duur ASC
+"""
+parameters = (personeelslid[0]['beroepstype'], personeelslid[0]['bevoegdheid'], personeelslid[0]['bevoegdheid'], personeelslid[0]['bevoegdheid'])
+onderhoudstaken = db.execute_query(select_query, parameters)
 
 # altijd verbinding sluiten met de database als je klaar bent
 db.close()
@@ -86,13 +98,14 @@ dagtakenlijst = {
 # STAP 2: Vul de dagtaken lijst
 huidige_duur = 0
 aantal_taken = 0
+taken_voor_pauze = []
 
-# Voeg geschikte onderhoudstaken toe
+# Eerst alle taken verzamelen
 for taak in onderhoudstaken:
     if (huidige_duur + taak['duur'] <= personeelslid[0]['werktijd'] and 
         (taak['fysieke_belasting'] <= max_fysieke_belasting or taak['fysieke_belasting'] == 0)):
         
-        dagtakenlijst["dagtaken"].append({
+        taken_voor_pauze.append({
             "omschrijving": taak['omschrijving'],
             "duur": taak['duur'],
             "prioriteit": taak['prioriteit'],
@@ -105,7 +118,24 @@ for taak in onderhoudstaken:
         huidige_duur += taak['duur']
         aantal_taken += 1
 
-# STAP 3: Zet de totale duur
+# Pauze inplannen alleen als DAADWERKELIJKE werktijd > 5.5 uur (330 minuten)
+if huidige_duur > 330:
+    # Bepaal positie voor pauze (ongeveer in het midden)
+    pauze_positie = len(taken_voor_pauze) // 2
+    
+    # Voeg taken toe met pauze op de juiste positie
+    for i, taak in enumerate(taken_voor_pauze):
+        if i == pauze_positie:
+            dagtakenlijst["dagtaken"].append({
+                "omschrijving": "Pauze", 
+                "duur": 30
+            })
+        dagtakenlijst["dagtaken"].append(taak)
+else:
+    # Geen pauze nodig bij daadwerkelijke werktijd ≤ 5.5 uur
+    dagtakenlijst["dagtaken"] = taken_voor_pauze
+
+# STAP 3: Zet de totale duur (zonder pauze, want pauze telt niet mee als werktijd)
 dagtakenlijst["totale_duur"] = huidige_duur
 
 # uiteindelijk schrijven we de dictionary weg naar een JSON-bestand, die kan worden ingelezen door de acceptatieomgeving
