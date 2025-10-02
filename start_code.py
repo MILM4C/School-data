@@ -135,6 +135,16 @@ else:
     # Geen pauze nodig bij daadwerkelijke werktijd ≤ 5.5 uur
     dagtakenlijst["dagtaken"] = taken_voor_pauze
 
+    # Voeg administratietijd toe
+if aantal_taken > 0:
+    administratie_duur = aantal_taken * 2  # 2 minuten per taak
+    dagtakenlijst["dagtaken"].append({
+        "omschrijving": "Administratietijd",
+        "aantal_taken": aantal_taken,
+        "duur": administratie_duur
+    })
+    huidige_duur += administratie_duur
+
 # STAP 3: Zet de totale duur (zonder pauze, want pauze telt niet mee als werktijd)
 dagtakenlijst["totale_duur"] = huidige_duur
 
